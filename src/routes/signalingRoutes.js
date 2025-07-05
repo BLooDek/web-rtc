@@ -6,7 +6,7 @@ export default (wsInstance) => {
 
   wsInstance.applyTo(router);
 
-  router.ws("/", (ws, req) => {
+  router.ws("/signaling", (ws, req) => {
     handleConnection(ws, wsInstance);
   });
 

@@ -1,13 +1,20 @@
 const loginSection = document.getElementById("login-section");
 const connectSection = document.getElementById("connect-section");
 const mediaSection = document.getElementById("media-section");
+const startMediaControls = document.getElementById("start-media-controls");
+const inCallControls = document.getElementById("in-call-controls");
+
 const usernameInput = document.getElementById("username-input");
 const loginBtn = document.getElementById("login-btn");
 const peerUsernameInput = document.getElementById("peer-username-input");
 const connectBtn = document.getElementById("connect-btn");
+
 const startCallBtn = document.getElementById("start-call-btn");
 const shareScreenBtn = document.getElementById("share-screen-btn");
 const hangUpBtn = document.getElementById("hang-up-btn");
+const muteBtn = document.getElementById("mute-btn");
+const stopMediaBtn = document.getElementById("stop-media-btn");
+
 const localVideo = document.getElementById("localVideo");
 const remoteVideo = document.getElementById("remoteVideo");
 const statusBar = document.getElementById("status-bar");
@@ -18,7 +25,6 @@ let dataChannel;
 let socket;
 let username;
 let peerUsername;
-
 const iceServers = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun.l.google.com:5349" },
@@ -38,7 +44,7 @@ const configuration = {
 
 function connectToSignalingServer() {
   const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  socket = new WebSocket(`${wsProtocol}//${window.location.host}`);
+  socket = new WebSocket(`${wsProtocol}//${window.location.host}/signaling`);
 
   socket.onopen = () => console.log("Connected to signaling server.");
   socket.onmessage = handleSignalingMessage;
@@ -95,6 +101,9 @@ connectBtn.addEventListener("click", () => {
 
 startCallBtn.addEventListener("click", () => startMedia(false));
 shareScreenBtn.addEventListener("click", () => startMedia(true));
+muteBtn.addEventListener("click", toggleMute);
+stopMediaBtn.addEventListener("click", stopLocalMedia);
+
 hangUpBtn.addEventListener("click", () => {
   sendToServer({ type: "leave", target: peerUsername });
   handleLeave();
@@ -197,18 +206,15 @@ async function handleCandidate(candidate) {
 }
 
 function setupDataChannelEvents() {
-  dataChannel.onopen = () => {
-    console.log("Data channel is open!");
-  };
-  dataChannel.onmessage = (event) => {
+  dataChannel.onopen = () => console.log("Data channel is open!");
+  dataChannel.onmessage = (event) =>
     console.log("Data channel message:", event.data);
-  };
 }
 
 async function startMedia(isScreenShare) {
   try {
     if (localStream) {
-      localStream.getTracks().forEach((track) => track.stop());
+      await stopLocalMedia();
     }
 
     const streamConstraints = isScreenShare
@@ -232,10 +238,42 @@ async function startMedia(isScreenShare) {
       target: peerUsername,
       offer: peerConnection.localDescription,
     });
+
+    startMediaControls.style.display = "none";
+    inCallControls.style.display = "flex";
   } catch (error) {
     console.error("Error starting media:", error);
     alert(`Could not start media. Error: ${error.name}`);
   }
+}
+
+function toggleMute() {
+  if (!localStream) return;
+  localStream.getAudioTracks().forEach((track) => {
+    track.enabled = !track.enabled;
+    muteBtn.textContent = track.enabled ? "Mute Mic" : "Unmute Mic";
+  });
+}
+
+async function stopLocalMedia() {
+  if (localStream) {
+    localStream.getTracks().forEach((track) => track.stop());
+  }
+  localVideo.srcObject = null;
+  localStream = null;
+
+  if (peerConnection) {
+    const senders = peerConnection.getSenders();
+    for (const sender of senders) {
+      if (sender.track) {
+        await sender.replaceTrack(null);
+      }
+    }
+  }
+
+  inCallControls.style.display = "none";
+  startMediaControls.style.display = "flex";
+  muteBtn.textContent = "Mute Mic";
 }
 
 function updateConnectionStatus(state) {
@@ -269,5 +307,7 @@ function handleLeave() {
     peerConnection = null;
   }
   mediaSection.style.display = "none";
+  inCallControls.style.display = "none";
+  startMediaControls.style.display = "flex";
   connectSection.style.display = "flex";
 }
