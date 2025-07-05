@@ -1,20 +1,24 @@
 const loginSection = document.getElementById("login-section");
-const callSection = document.getElementById("call-section");
+const connectSection = document.getElementById("connect-section");
+const mediaSection = document.getElementById("media-section");
 const usernameInput = document.getElementById("username-input");
 const loginBtn = document.getElementById("login-btn");
 const peerUsernameInput = document.getElementById("peer-username-input");
+const connectBtn = document.getElementById("connect-btn");
 const startCallBtn = document.getElementById("start-call-btn");
 const shareScreenBtn = document.getElementById("share-screen-btn");
 const hangUpBtn = document.getElementById("hang-up-btn");
 const localVideo = document.getElementById("localVideo");
 const remoteVideo = document.getElementById("remoteVideo");
-const statusDiv = document.getElementById("status");
+const statusBar = document.getElementById("status-bar");
 
 let localStream;
 let peerConnection;
+let dataChannel;
 let socket;
 let username;
 let peerUsername;
+
 const iceServers = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun.l.google.com:5349" },
@@ -27,134 +31,94 @@ const iceServers = [
   { urls: "stun:stun4.l.google.com:19302" },
   { urls: "stun:stun4.l.google.com:5349" },
 ];
+
 const configuration = {
-  iceServers,
+  iceServers /*: [{ urls: "stun:stun.l.google.com:19302" }],*/,
 };
 
 function connectToSignalingServer() {
   const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   socket = new WebSocket(`${wsProtocol}//${window.location.host}`);
 
-  socket.onopen = () => {
-    console.log("Connected to signaling server.");
-  };
-
-  socket.onmessage = (message) => {
-    console.log("Got message:", message.data);
-    const data = JSON.parse(message.data);
-
-    switch (data.type) {
-      case "login":
-        handleLogin(data.success);
-        break;
-      case "offer":
-        handleOffer(data.offer, data.name);
-        break;
-      case "answer":
-        handleAnswer(data.answer);
-        break;
-      case "candidate":
-        handleCandidate(data.candidate);
-        break;
-      case "leave":
-        handleLeave();
-        break;
-      default:
-        break;
-    }
-  };
-
-  socket.onerror = (err) => {
-    console.error("Signaling server error:", err);
-  };
+  socket.onopen = () => console.log("Connected to signaling server.");
+  socket.onmessage = handleSignalingMessage;
+  socket.onerror = (err) => console.error("Signaling server error:", err);
 }
 
 function sendToServer(msg) {
   socket.send(JSON.stringify(msg));
 }
 
+async function handleSignalingMessage(message) {
+  const data = JSON.parse(message.data);
+  console.log("Got message:", data.type);
+
+  switch (data.type) {
+    case "login":
+      handleLogin(data.success);
+      break;
+    case "offer":
+      await handleOffer(data.offer, data.name);
+      break;
+    case "answer":
+      await handleAnswer(data.answer);
+      break;
+    case "candidate":
+      await handleCandidate(data.candidate);
+      break;
+    case "leave":
+      handleLeave();
+      break;
+    default:
+      break;
+  }
+}
+
 loginBtn.addEventListener("click", () => {
   username = usernameInput.value;
   if (username.length > 0) {
     connectToSignalingServer();
-    setTimeout(() => {
-      sendToServer({ type: "login", name: username });
-    }, 500);
+    setTimeout(() => sendToServer({ type: "login", name: username }), 500);
   } else {
     alert("Please enter a username.");
   }
 });
 
+connectBtn.addEventListener("click", () => {
+  peerUsername = peerUsernameInput.value;
+  if (peerUsername.length > 0 && peerUsername !== username) {
+    initiateConnection();
+  } else {
+    alert("Please enter a valid peer username.");
+  }
+});
+
+startCallBtn.addEventListener("click", () => startMedia(false));
+shareScreenBtn.addEventListener("click", () => startMedia(true));
+hangUpBtn.addEventListener("click", () => {
+  sendToServer({ type: "leave", target: peerUsername });
+  handleLeave();
+});
+
 function handleLogin(success) {
   if (success) {
-    console.log("Login successful.");
     loginSection.style.display = "none";
-    callSection.style.display = "block";
+    connectSection.style.display = "flex";
+    statusBar.innerText = `Logged in as ${username}. Ready to connect.`;
   } else {
     alert("Login failed. Username may be taken.");
   }
 }
 
-startCallBtn.addEventListener("click", () => {
-  peerUsername = peerUsernameInput.value;
-  if (peerUsername.length > 0) {
-    startCall(false);
-  } else {
-    alert("Please enter a peer username.");
-  }
-});
-
-shareScreenBtn.addEventListener("click", () => {
-  peerUsername = peerUsernameInput.value;
-  if (peerUsername.length > 0) {
-    startCall(true);
-  } else {
-    alert("Please enter a peer username.");
-  }
-});
-
-async function startCall(isScreenShare) {
-  statusDiv.innerText = "Starting call...";
-  try {
-    if (isScreenShare) {
-      localStream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: true,
-      });
-    } else {
-      localStream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true,
-      });
-    }
-    localVideo.srcObject = localStream;
-
-    createPeerConnection();
-
-    localStream.getTracks().forEach((track) => {
-      peerConnection.addTrack(track, localStream);
-    });
-  } catch (error) {
-    handleMediaError(error);
-  }
-}
-
-function handleMediaError(error) {
-  console.error("Error accessing media devices.", error);
-  statusDiv.innerText = `Error: ${error.name}. See console for details.`;
-
-  if (error.name === "NotAllowedError") {
-    alert(
-      "Permission to access camera/microphone was denied. Please enable it in your browser settings."
-    );
-  } else if (error.name === "NotFoundError") {
-    alert("No camera/microphone found.");
-  }
-}
-
 function createPeerConnection() {
-  statusDiv.innerText = "Creating peer connection...";
   peerConnection = new RTCPeerConnection(configuration);
+
+  // **KEY FIX FOR FIREFOX:**
+  // Initialize the remote stream and assign it to the video element upfront.
+  // ensure remoteVideo.srcObject is always a valid MediaStream object.
+  if (!remoteVideo.srcObject) {
+    remoteVideo.srcObject = new MediaStream();
+  }
 
   peerConnection.onicecandidate = (event) => {
     if (event.candidate) {
@@ -166,107 +130,144 @@ function createPeerConnection() {
     }
   };
 
+  // **KEY FIX FOR FIREFOX:**
+  // Add incoming tracks to the existing MediaStream on the video element.
   peerConnection.ontrack = (event) => {
-    statusDiv.innerText = "Remote stream received.";
-    remoteVideo.srcObject = event.streams;
-  };
-
-  peerConnection.onnegotiationneeded = async () => {
-    try {
-      statusDiv.innerText = "Negotiation needed, creating offer...";
-      const offer = await peerConnection.createOffer();
-      await peerConnection.setLocalDescription(offer);
-      sendToServer({
-        type: "offer",
-        target: peerUsername,
-        offer: peerConnection.localDescription,
-      });
-    } catch (error) {
-      console.error("Error creating offer:", error);
-      statusDiv.innerText = "Error creating offer.";
+    console.log("Remote track received:", event.track.kind);
+    if (remoteVideo.srcObject) {
+      remoteVideo.srcObject.addTrack(event.track);
     }
   };
 
   peerConnection.onconnectionstatechange = () => {
-    statusDiv.innerText = `Connection state: ${peerConnection.connectionState}`;
-    console.log(
-      `Connection state changed to: ${peerConnection.connectionState}`
-    );
-    if (peerConnection.connectionState === "connected") {
-      hangUpBtn.disabled = false;
-      startCallBtn.disabled = true;
-      shareScreenBtn.disabled = true;
-    }
-    if (
-      peerConnection.connectionState === "failed" ||
-      peerConnection.connectionState === "disconnected" ||
-      peerConnection.connectionState === "closed"
-    ) {
-      handleLeave();
-    }
+    updateConnectionStatus(peerConnection.connectionState);
+  };
+  peerConnection.ondatachannel = (event) => {
+    dataChannel = event.channel;
+    setupDataChannelEvents();
   };
 }
 
-async function handleOffer(offer, name) {
-  peerUsername = name;
+async function initiateConnection() {
   createPeerConnection();
-  await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+  dataChannel = peerConnection.createDataChannel("messaging");
+  setupDataChannelEvents();
 
   try {
-    localStream = await navigator.mediaDevices.getUserMedia({
-      video: true,
-      audio: true,
-    });
-    localVideo.srcObject = localStream;
-    localStream
-      .getTracks()
-      .forEach((track) => peerConnection.addTrack(track, localStream));
-
-    const answer = await peerConnection.createAnswer();
-    await peerConnection.setLocalDescription(answer);
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
     sendToServer({
-      type: "answer",
+      type: "offer",
       target: peerUsername,
-      answer: peerConnection.localDescription,
+      offer: peerConnection.localDescription,
     });
-    statusDiv.innerText = "Call answered.";
-  } catch (error) {
-    handleMediaError(error);
+  } catch (e) {
+    console.error("Error creating initial offer:", e);
   }
+}
+
+async function handleOffer(offer, name) {
+  if (!peerConnection) {
+    peerUsername = name;
+    createPeerConnection();
+  }
+
+  await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+  const answer = await peerConnection.createAnswer();
+  await peerConnection.setLocalDescription(answer);
+  sendToServer({
+    type: "answer",
+    target: peerUsername,
+    answer: peerConnection.localDescription,
+  });
 }
 
 async function handleAnswer(answer) {
   await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-  statusDiv.innerText = "Call established.";
 }
 
-function handleCandidate(candidate) {
+async function handleCandidate(candidate) {
   if (candidate) {
-    peerConnection
-      .addIceCandidate(new RTCIceCandidate(candidate))
-      .catch((e) => console.error("Error adding received ICE candidate", e));
+    try {
+      await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (e) {
+      console.error("Error adding received ICE candidate", e);
+    }
   }
 }
 
-hangUpBtn.addEventListener("click", () => {
-  sendToServer({ type: "leave", target: peerUsername });
-  handleLeave();
-});
+function setupDataChannelEvents() {
+  dataChannel.onopen = () => {
+    console.log("Data channel is open!");
+  };
+  dataChannel.onmessage = (event) => {
+    console.log("Data channel message:", event.data);
+  };
+}
+
+async function startMedia(isScreenShare) {
+  try {
+    if (localStream) {
+      localStream.getTracks().forEach((track) => track.stop());
+    }
+
+    const streamConstraints = isScreenShare
+      ? { video: true }
+      : { video: true, audio: true };
+
+    localStream = isScreenShare
+      ? await navigator.mediaDevices.getDisplayMedia(streamConstraints)
+      : await navigator.mediaDevices.getUserMedia(streamConstraints);
+
+    localVideo.srcObject = localStream;
+
+    localStream
+      .getTracks()
+      .forEach((track) => peerConnection.addTrack(track, localStream));
+
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+    sendToServer({
+      type: "offer",
+      target: peerUsername,
+      offer: peerConnection.localDescription,
+    });
+  } catch (error) {
+    console.error("Error starting media:", error);
+    alert(`Could not start media. Error: ${error.name}`);
+  }
+}
+
+function updateConnectionStatus(state) {
+  statusBar.innerText = `Connection state: ${state}`;
+  if (state === "connected") {
+    connectSection.style.display = "none";
+    mediaSection.style.display = "flex";
+  }
+  if (state === "failed" || state === "disconnected" || state === "closed") {
+    handleLeave();
+  }
+}
 
 function handleLeave() {
-  statusDiv.innerText = "Call ended.";
+  statusBar.innerText = "Call ended.";
   peerUsername = null;
-  remoteVideo.srcObject = null;
-  if (peerConnection) {
-    peerConnection.close();
-    peerConnection = null;
+
+  if (remoteVideo.srcObject) {
+    remoteVideo.srcObject.getTracks().forEach((track) => track.stop());
+    remoteVideo.srcObject = null;
   }
+
   if (localStream) {
     localStream.getTracks().forEach((track) => track.stop());
     localStream = null;
     localVideo.srcObject = null;
   }
-  hangUpBtn.disabled = true;
-  startCallBtn.disabled = false;
-  shareScreenBtn.disabled = false;
+
+  if (peerConnection) {
+    peerConnection.close();
+    peerConnection = null;
+  }
+  mediaSection.style.display = "none";
+  connectSection.style.display = "flex";
 }

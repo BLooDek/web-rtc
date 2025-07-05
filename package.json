@@ -4,7 +4,7 @@
   "description": "",
   "license": "ISC",
   "author": "",
-  "type": "commonjs",
+  "type": "module",
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "express": "^5.1.0",
+    "express-ws": "^5.0.2",
     "ws": "^8.18.3"
   }
 }
