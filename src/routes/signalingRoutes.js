@@ -1,7 +1,7 @@
 import express from "express";
 import { handleConnection } from "../controllers/signalingController.js";
 
-export default function (wsInstance) {
+export default (wsInstance) => {
   const router = express.Router();
 
   wsInstance.applyTo(router);
@@ -11,4 +11,4 @@ export default function (wsInstance) {
   });
 
   return router;
-}
+};

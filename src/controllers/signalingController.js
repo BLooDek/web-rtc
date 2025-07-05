@@ -1,10 +1,10 @@
 import * as userManager from "../services/userManager.js";
 
-function sendTo(connection, message) {
+const sendTo = (connection, message) => {
   connection.send(JSON.stringify(message));
-}
+};
 
-export function handleConnection(ws, wsInstance) {
+export const handleConnection = (ws, wsInstance) => {
   console.log("A new user connected.");
 
   ws.on("message", (message) => {
@@ -44,26 +44,26 @@ export function handleConnection(ws, wsInstance) {
     console.log(`User ${ws.name} disconnected.`);
     userManager.removeUser(ws);
   });
-}
+};
 
-function handleLogin(ws, data) {
+const handleLogin = (ws, data) => {
   console.log(`User trying to log in as: ${data.name}`);
   const success = userManager.addUser(data.name, ws);
   sendTo(ws, { type: "login", success });
   if (!success) {
     console.log(`Login failed for ${data.name}, username taken.`);
   }
-}
+};
 
-function handleForwarding(ws, data) {
+const handleForwarding = (ws, data) => {
   console.log(`Forwarding '${data.type}' from ${ws.name} to ${data.target}`);
   if (data.type === "offer") {
     userManager.linkPeers(ws.name, data.target);
   }
   userManager.forwardMessage(ws.name, data);
-}
+};
 
-function handleLeave(ws) {
+const handleLeave = (ws) => {
   console.log(`User ${ws.name} is leaving the call.`);
   userManager.removeUser(ws);
-}
+};
