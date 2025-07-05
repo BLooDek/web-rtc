@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple WebRTC Video/Screen Share</title>
+    <style>
+        body { font-family: sans-serif; background-color: #2c2c2c; color: #f0f0f0; display: flex; flex-direction: column; align-items: center; margin: 0; padding: 20px; }
+        h1 { color: #4CAF50; }
+       .container { display: flex; flex-direction: column; align-items: center; gap: 20px; width: 100%; max-width: 1200px; }
+       .login-container,.call-container { background-color: #333; padding: 20px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.3); display: flex; flex-direction: column; gap: 10px; }
+       .videos { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+        video { background-color: #000; border: 2px solid #444; border-radius: 8px; width: 100%; max-width: 500px; }
+       .controls { display: flex; gap: 10px; justify-content: center; margin-top: 10px; }
+        button { background-color: #4CAF50; color: white; border: none; padding: 10px 20px; text-align: center; text-decoration: none; display: inline-block; font-size: 16px; margin: 4px 2px; cursor: pointer; border-radius: 5px; transition: background-color 0.3s; }
+        button:hover { background-color: #45a049; }
+        button:disabled { background-color: #555; cursor: not-allowed; }
+        input[type="text"] { padding: 10px; border-radius: 5px; border: 1px solid #555; background-color: #444; color: #f0f0f0; }
+        #status { margin-top: 15px; color: #ffeb3b; }
+    </style>
+</head>
+<body>
+    <h1>WebRTC P2P Communication</h1>
+
+    <div class="container">
+        <div id="login-section" class="login-container">
+            <input type="text" id="username-input" placeholder="Enter your name" />
+            <button id="login-btn">Login</button>
+        </div>
+
+        <div id="call-section" class="call-container" style="display: none;">
+            <input type="text" id="peer-username-input" placeholder="Enter peer's name to call" />
+            <div class="controls">
+                <button id="start-call-btn">Start Webcam Call</button>
+                <button id="share-screen-btn">Share Screen</button>
+                <button id="hang-up-btn" disabled>Hang Up</button>
+            </div>
+            <div id="status">Ready to connect...</div>
+        </div>
+
+        <div class="videos">
+            <div>
+                <h2>Local Video</h2>
+                <video id="localVideo" autoplay muted playsinline></video>
+            </div>
+            <div>
+                <h2>Remote Video</h2>
+                <video id="remoteVideo" autoplay playsinline></video>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
+    <script src="client.js"></script>
+</body>
+</html>
